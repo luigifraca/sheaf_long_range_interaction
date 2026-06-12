@@ -56,6 +56,12 @@ def main() -> int:
     parser.add_argument("--revision", required=True)
     parser.add_argument("--deployment-id")
     parser.add_argument(
+        "--roles",
+        default=",".join(ROLES),
+        help="Comma-separated worker roles to deploy.",
+    )
+    parser.add_argument("--gpu-type", default="NVIDIA A40")
+    parser.add_argument(
         "--source-root",
         help=(
             "Preloaded source tree on the network volume "
@@ -69,6 +75,10 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=Path(".runpod-deployment.json"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    roles = tuple(role.strip() for role in args.roles.split(",") if role.strip())
+    unknown_roles = sorted(set(roles) - set(ROLES))
+    if unknown_roles:
+        parser.error(f"unknown roles: {', '.join(unknown_roles)}")
 
     api_key = os.environ["RUNPOD_API_KEY"]
     wandb_key = os.environ["WANDB_API_KEY"]
@@ -87,9 +97,11 @@ def main() -> int:
         )
 
     pods = []
-    for role in ROLES:
+    for role in roles:
         if args.source_root:
             bootstrap = (
+                'until test -x "$SLRI_SOURCE_ROOT/scripts/'
+                'bootstrap_runpod_worker.sh"; do sleep 10; done && '
                 'cp "$SLRI_SOURCE_ROOT/scripts/bootstrap_runpod_worker.sh" '
                 "/tmp/bootstrap.sh && "
                 "chmod +x /tmp/bootstrap.sh && "
@@ -111,7 +123,7 @@ def main() -> int:
             "imageName": args.image,
             "computeType": "GPU",
             "cloudType": "SECURE",
-            "gpuTypeIds": ["NVIDIA A40"],
+            "gpuTypeIds": [args.gpu_type],
             "gpuTypePriority": "custom",
             "gpuCount": 1,
             "dataCenterIds": [volume["dataCenterId"]],

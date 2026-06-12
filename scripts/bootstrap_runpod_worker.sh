@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROLE="${SLRI_WORKER_ROLE:?SLRI_WORKER_ROLE is required}"
+ROLES="${SLRI_WORKER_ROLES:-$ROLE}"
 REPOSITORY="${SLRI_REPOSITORY:-https://github.com/luigifraca/sheaf_long_range_interaction.git}"
 REVISION="${SLRI_REVISION:-main}"
 CODE_ROOT="/root/sheaf_long_range_interaction"
@@ -45,4 +46,7 @@ export PYTHONPATH="$CODE_ROOT/src:$CODE_ROOT/external/sheaf-mpnn/src"
 export WANDB_DIR="${SLRI_VOLUME_ROOT:-/workspace/sheaf-lri-storage}/wandb"
 mkdir -p "$WANDB_DIR"
 
-scripts/run_runpod_worker.sh "$ROLE"
+IFS=',' read -r -a WORKER_ROLES <<< "$ROLES"
+for worker_role in "${WORKER_ROLES[@]}"; do
+  scripts/run_runpod_worker.sh "$worker_role"
+done
