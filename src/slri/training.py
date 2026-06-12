@@ -177,13 +177,50 @@ def _tracking(spec: dict[str, Any], path: Path):
         raise RuntimeError(
             "W&B tracking requested; install with `uv sync --extra wandb`"
         ) from exc
+    dataset = spec["dataset"]
+    setting = dataset.get("setting", "default").replace("=", "")
+    model = spec["model"]
+    analysis_group = model.get("analysis_group", "main")
+    run_name = "-".join(
+        (
+            spec["task"],
+            dataset["name"],
+            setting,
+            spec.get("profile", "benchmark"),
+            analysis_group,
+            model["variant"],
+            f"d{model['stalk_dim']}",
+            f"h{model['hidden_dim']}",
+            f"seed{spec['seed']}",
+        )
+    )
     return wandb.init(
         project=spec["tracking"].get("project", "sheaf-long-range"),
         entity=spec["tracking"].get("entity"),
-        name=spec["run_id"],
+        id=spec["run_id"],
+        name=run_name,
+        group="/".join(
+            (
+                spec["task"],
+                dataset["name"],
+                setting,
+                spec.get("profile", "benchmark"),
+            )
+        ),
+        job_type=model["variant"],
+        tags=[
+            spec["task"],
+            dataset["name"],
+            setting,
+            model["variant"],
+            f"stalk-d{model['stalk_dim']}",
+            f"hidden-h{model['hidden_dim']}",
+            analysis_group,
+        ],
         config=spec,
         dir=str(path / "logs"),
         reinit=True,
+        resume="allow",
     )
 
 

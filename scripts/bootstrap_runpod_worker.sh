@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROLE="${SLRI_WORKER_ROLE:?SLRI_WORKER_ROLE is required}"
+REPOSITORY="${SLRI_REPOSITORY:-https://github.com/luigifraca/sheaf_long_range_interaction.git}"
+REVISION="${SLRI_REVISION:-main}"
+CODE_ROOT="/root/sheaf_long_range_interaction"
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends curl git ca-certificates
+rm -rf /var/lib/apt/lists/*
+
+if [[ ! -d "$CODE_ROOT/.git" ]]; then
+  git clone --recurse-submodules "$REPOSITORY" "$CODE_ROOT"
+fi
+cd "$CODE_ROOT"
+git fetch origin "$REVISION"
+git checkout --force "$REVISION"
+git submodule update --init --recursive
+
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+uv python install 3.13
+uv sync --extra wandb
+scripts/setup_curvature_env.sh
+
+export PATH="$CODE_ROOT/.venv/bin:$PATH"
+export SLRI_PYTHON="$CODE_ROOT/.venv/bin/python"
+export SLRI_CURVATURE_PYTHON="$CODE_ROOT/.venv-curvature/bin/python"
+export PYTHONPATH="$CODE_ROOT/src:$CODE_ROOT/external/sheaf-mpnn/src"
+export WANDB_DIR="${SLRI_VOLUME_ROOT:-/workspace/sheaf-lri-storage}/wandb"
+mkdir -p "$WANDB_DIR"
+
+scripts/run_runpod_worker.sh "$ROLE"

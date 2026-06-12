@@ -119,6 +119,8 @@ def extract_sheaf_geometry(
     model: nn.Module,
     x: torch.Tensor,
     edge_index: torch.Tensor,
+    *,
+    max_edges_per_layer: int | None = None,
 ) -> GeometrySnapshot | None:
     """Extract restriction, transport, and normalized transport diagnostics."""
     if not hasattr(model, "stalk_dim") or not hasattr(model, "layers"):
@@ -175,9 +177,21 @@ def extract_sheaf_geometry(
             )
         del norm_self
         alpha = float(layer.alpha.detach().abs().item())
-        for edge_row, (source, target) in enumerate(
-            layer_edges.detach().cpu().t().tolist()
+        edge_count = layer_edges.size(1)
+        if max_edges_per_layer and edge_count > max_edges_per_layer:
+            selected_rows = torch.linspace(
+                0,
+                edge_count - 1,
+                steps=max_edges_per_layer,
+                device=layer_edges.device,
+            ).round().long().unique()
+        else:
+            selected_rows = torch.arange(edge_count, device=layer_edges.device)
+        selected_edges = layer_edges[:, selected_rows].detach().cpu().t().tolist()
+        for edge_row_tensor, (source, target) in zip(
+            selected_rows, selected_edges, strict=True
         ):
+            edge_row = int(edge_row_tensor.item())
             dst_diag = matrix_diagnostics(dst_map[edge_row])
             src_diag = matrix_diagnostics(src_map[edge_row])
             cross_diag = matrix_diagnostics(cross_matrix[edge_row])

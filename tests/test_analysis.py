@@ -258,6 +258,30 @@ def test_geometry_extracts_all_sheaf_objects():
     } <= set(metrics)
 
 
+def test_geometry_supports_deterministic_edge_sampling():
+    graph = make_transfer_graph("ring", label=0, size=10)
+    model = build_model(
+        variant="general",
+        in_channels=5,
+        out_channels=5,
+        stalk_dim=2,
+        hidden_dim=3,
+        num_layers=2,
+        normalize_output=False,
+    )
+    first = extract_sheaf_geometry(
+        model, graph.x, graph.edge_index, max_edges_per_layer=5
+    )
+    second = extract_sheaf_geometry(
+        model, graph.x, graph.edge_index, max_edges_per_layer=5
+    )
+    assert first is not None and second is not None
+    assert len(first.table) == 10
+    assert first.table[["layer", "source", "target"]].equals(
+        second.table[["layer", "source", "target"]]
+    )
+
+
 def test_analysis_preset_contains_requested_controls():
     architectures = analysis_architectures()
     assert len(architectures) == 46

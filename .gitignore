@@ -19,3 +19,4 @@ summaries/
 *.sqlite-wal
 wandb/
 .slri-smoke/
+.runpod-deployment.json

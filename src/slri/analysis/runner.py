@@ -564,6 +564,9 @@ def analyze_run(
                 model,
                 graphs[0].x,
                 graphs[0].edge_index,
+                max_edges_per_layer=config["geometry"].get(
+                    "max_edges_per_layer"
+                ),
             )
         pair_table, hop_table, influence_matrices, influence_summary = (
             _influence_tables(

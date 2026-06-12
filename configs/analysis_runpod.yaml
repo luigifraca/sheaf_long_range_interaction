@@ -1,0 +1,42 @@
+queries:
+  - status=completed,variant=general,stalk_dim=1,hidden_dim=32
+  - status=completed,variant=general,stalk_dim=3,hidden_dim=32
+  - status=completed,variant=orthogonal,stalk_dim=3,hidden_dim=32
+  - status=completed,variant=diagonal,stalk_dim=3,hidden_dim=32
+  - status=completed,variant=identity,stalk_dim=3,hidden_dim=32
+  - status=completed,variant=frozen_orthogonal,stalk_dim=3,hidden_dim=32
+  - status=completed,variant=gcn,hidden_dim=32
+  - status=completed,variant=mlp,hidden_dim=32
+checkpoints: [initial, best]
+max_hops:
+  barbell: 16
+  transfer: 16
+  cities: 16
+influence:
+  barbell_samples: 100
+  transfer_samples: 500
+  transfer_all_pairs_samples: 100
+  city_targets: 10000
+  rich_targets: 256
+  retain_matrix_targets: 8
+  bootstrap_samples: 500
+pathwise:
+  barbell_samples: 20
+  transfer_samples: 100
+  city_targets: 16
+  max_enumerated_paths: 10000
+geometry:
+  enabled: true
+  max_edges_per_layer:
+curvature:
+  enabled: true
+  alpha: 0.5
+  epsilon: 1.0e-8
+  proc: 1
+probes:
+  enabled: true
+  max_samples: 10000
+layerwise:
+  retain_embedding_nodes: 256
+profiles:
+  benchmark: {}

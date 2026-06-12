@@ -44,6 +44,18 @@ def _common_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--wandb", action="store_true")
     parser.add_argument("--wandb-project")
     parser.add_argument("--wandb-entity")
+    parser.add_argument(
+        "--dataset",
+        action="append",
+        help="Restrict execution to one dataset name; may be repeated.",
+    )
+    parser.add_argument(
+        "--setting",
+        action="append",
+        help="Restrict execution to one resolved setting, for example size=20.",
+    )
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=0)
 
 
 def _resolved_runs(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -56,7 +68,48 @@ def _resolved_runs(args: argparse.Namespace) -> list[dict[str, Any]]:
         config.setdefault("tracking", {})["project"] = args.wandb_project
     if args.wandb_entity:
         config.setdefault("tracking", {})["entity"] = args.wandb_entity
-    return expand_grid(config)
+    runs = expand_grid(config)
+    if args.dataset:
+        selected = set(args.dataset)
+        runs = [run for run in runs if run["dataset"]["name"] in selected]
+    if args.setting:
+        selected = set(args.setting)
+        runs = [
+            run
+            for run in runs
+            if run["dataset"].get("setting", "default") in selected
+        ]
+    if args.shard_count <= 0:
+        raise SystemExit("--shard-count must be positive")
+    if not 0 <= args.shard_index < args.shard_count:
+        raise SystemExit("--shard-index must be in [0, shard-count)")
+    if args.shard_count > 1:
+        setting_keys = sorted(
+            {
+                (
+                    run["dataset"]["name"],
+                    run["dataset"].get("setting", "default"),
+                )
+                for run in runs
+            }
+        )
+        assigned = {
+            key
+            for index, key in enumerate(setting_keys)
+            if index % args.shard_count == args.shard_index
+        }
+        runs = [
+            run
+            for run in runs
+            if (
+                run["dataset"]["name"],
+                run["dataset"].get("setting", "default"),
+            )
+            in assigned
+        ]
+    if not runs:
+        raise SystemExit("The requested selectors produced an empty run grid")
+    return runs
 
 
 def _cmd_grid(args: argparse.Namespace) -> int:

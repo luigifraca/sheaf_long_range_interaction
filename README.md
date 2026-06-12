@@ -162,6 +162,25 @@ Run them concurrently on three GPUs:
 scripts/run_all_gpu.sh --gpus 0,1,2 --parallel
 ```
 
+Deploy the complete three-seed analysis suite to six RunPod A40 workers:
+
+```bash
+set -a
+source .env
+set +a
+python3 scripts/deploy_runpod.py \
+  --volume-id <network-volume-id> \
+  --revision "$(git rev-parse HEAD)"
+```
+
+The deployment uses one barbell worker, three deterministic transfer shards,
+and one worker per city. Each worker has an independent SQLite index under
+`deployments/<deployment-id>/workers/` on the shared network volume. W&B
+names include task, dataset setting, profile, analysis group, model family,
+dimensions, and seed. Initial-versus-best diagnostics run on the headline
+model subset defined in `configs/analysis_runpod.yaml`; city diagnostics use
+the bounded settings in `configs/analysis_cities_runpod.yaml`.
+
 All task launchers accept `--profile smoke`, `--seeds`, `--storage-root`,
 `--precision`, `--force`, `--dry-run`, and `--wandb`. Completed run IDs are
 skipped by default, so rerunning a launcher resumes the grid.
