@@ -56,6 +56,13 @@ def main() -> int:
     parser.add_argument("--revision", required=True)
     parser.add_argument("--deployment-id")
     parser.add_argument(
+        "--source-root",
+        help=(
+            "Preloaded source tree on the network volume "
+            "(recommended for private repos)."
+        ),
+    )
+    parser.add_argument(
         "--image",
         default="runpod/pytorch:1.0.3-cu1281-torch280-ubuntu2404",
     )
@@ -81,16 +88,24 @@ def main() -> int:
 
     pods = []
     for role in ROLES:
-        bootstrap = (
-            "cd /root && "
-            "curl -fsSL "
-            "https://raw.githubusercontent.com/luigifraca/"
-            f"sheaf_long_range_interaction/{args.revision}/"
-            "scripts/bootstrap_runpod_worker.sh "
-            "-o /tmp/bootstrap.sh && "
-            "chmod +x /tmp/bootstrap.sh && "
-            "/tmp/bootstrap.sh"
-        )
+        if args.source_root:
+            bootstrap = (
+                'cp "$SLRI_SOURCE_ROOT/scripts/bootstrap_runpod_worker.sh" '
+                "/tmp/bootstrap.sh && "
+                "chmod +x /tmp/bootstrap.sh && "
+                "/tmp/bootstrap.sh"
+            )
+        else:
+            bootstrap = (
+                "cd /root && "
+                "curl -fsSL "
+                "https://raw.githubusercontent.com/luigifraca/"
+                f"sheaf_long_range_interaction/{args.revision}/"
+                "scripts/bootstrap_runpod_worker.sh "
+                "-o /tmp/bootstrap.sh && "
+                "chmod +x /tmp/bootstrap.sh && "
+                "/tmp/bootstrap.sh"
+            )
         payload = {
             "name": f"slri-{role}-{deployment_id}",
             "imageName": args.image,
@@ -114,6 +129,7 @@ def main() -> int:
                 "SLRI_DEPLOYMENT_ID": deployment_id,
                 "SLRI_VOLUME_ROOT": "/workspace/sheaf-lri-storage",
                 "SLRI_REVISION": args.revision,
+                "SLRI_SOURCE_ROOT": args.source_root or "",
                 "WANDB_API_KEY": wandb_key,
                 "WANDB_PROJECT": "sheaf-long-range-full",
                 "PYTHONUNBUFFERED": "1",
