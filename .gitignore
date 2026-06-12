@@ -8,6 +8,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.env
 
 # Experiment data and artifacts belong outside Git.
 data/
@@ -17,3 +18,4 @@ summaries/
 *.sqlite-shm
 *.sqlite-wal
 wandb/
+.slri-smoke/
