@@ -1,0 +1,55 @@
+queries:
+  - status=completed
+checkpoints: [initial, best]
+max_hops:
+  barbell: 16
+  transfer: 16
+  cities: 16
+influence:
+  barbell_samples: 100
+  transfer_samples: 500
+  transfer_all_pairs_samples: 100
+  city_targets: 10000
+  rich_targets: 256
+  retain_matrix_targets: 8
+  bootstrap_samples: 500
+pathwise:
+  barbell_samples: 20
+  transfer_samples: 100
+  city_targets: 16
+  max_enumerated_paths: 10000
+geometry:
+  enabled: true
+curvature:
+  enabled: true
+  alpha: 0.5
+  epsilon: 1.0e-8
+  proc: 1
+probes:
+  enabled: true
+  max_samples: 10000
+layerwise:
+  retain_embedding_nodes: 256
+profiles:
+  benchmark: {}
+  smoke:
+    checkpoints: [best]
+    influence:
+      barbell_samples: 1
+      transfer_samples: 1
+      transfer_all_pairs_samples: 0
+      city_targets: 1
+      rich_targets: 1
+      retain_matrix_targets: 1
+      bootstrap_samples: 10
+    pathwise:
+      barbell_samples: 1
+      transfer_samples: 1
+      city_targets: 0
+      max_enumerated_paths: 100
+    curvature:
+      enabled: false
+    probes:
+      enabled: false
+    layerwise:
+      retain_embedding_nodes: 32

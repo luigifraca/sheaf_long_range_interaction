@@ -1,0 +1,88 @@
+\subsection{Experimental Setup}
+\label{subsec:experimental-setup}
+
+We evaluate Neural Sheaf Diffusion (NSD) on three families of tasks designed
+to test long-range information propagation: synthetic barbell graphs,
+graph-transfer benchmarks, and large urban road networks. All experiments use
+the implementation from \texttt{sheaf-mpnn}, pinned to a fixed Git revision,
+and are executed through a common training and evaluation pipeline. We compare
+four choices of restriction maps: general, orthogonal, diagonal, and identity.
+The identity variant is an additional control in which every node--edge
+restriction map is fixed to the identity matrix and is therefore not learned.
+For each map family, we consider stalk dimensions
+$d \in \{2,3,5\}$ and hidden dimensions
+$h \in \{16,32\}$, giving $24$ model configurations. Unless stated otherwise,
+each configuration is evaluated using three random seeds.
+
+\paragraph{Barbell regression.}
+Following the synthetic over-squashing experiment of
+Bamberger et al., each graph consists of two cliques connected by a sparse
+set of bridge edges. Both the number of vertices per clique and the number of
+bridges are configurable; the default graph contains ten vertices per clique
+and one bridge. Each vertex has a $40$-dimensional input feature. Features in
+the two cliques are sampled independently from
+$\mathcal{U}(-\sqrt{3},0)$ and $\mathcal{U}(0,\sqrt{3})$, respectively. The
+target at every vertex is the mean input feature of the opposite clique,
+making successful prediction dependent on information passing through the
+bottleneck. We use three NSD layers, Adam with learning rate $10^{-3}$, and
+train for at most $500$ epochs. Performance is measured using the mean,
+over vertices, of the squared Euclidean prediction error.
+
+\paragraph{Graph-transfer tasks.}
+We implement the Ring, CrossedRing, CliquePath, and binary Tree tasks from
+Di Giovanni et al. Each graph contains a designated source and target vertex.
+The target receives one of five one-hot class vectors, the source receives the
+zero vector, and all remaining vertices receive a constant vector. The model
+must recover the target class at the source. Ring, CrossedRing, and CliquePath
+are evaluated at graph sizes
+$N \in \{2,6,10,20,30\}$, while binary trees are evaluated at depths
+$r \in \{2,\ldots,8\}$. The number of NSD layers is set to the shortest-path
+distance between source and target, preventing under-reaching while retaining
+the effect of over-squashing. For each topology and size, we generate balanced
+sets of $5000$, $500$, and $500$ graphs for training, validation, and testing.
+Models are trained with Adam, learning rate $10^{-3}$, weight decay
+$5 \times 10^{-4}$, and batch size $128$. We report source-node
+classification accuracy and macro-F1. A separate legacy configuration is
+retained solely for comparison with the original implementation; all primary
+results use validation-based model selection and a held-out test set.
+
+\paragraph{City networks and reproducibility.}
+Finally, we evaluate NSD on the Paris and Shanghai datasets from
+City-Networks. Their road graphs contain $114{,}127$ and $183{,}917$ vertices,
+respectively, with $37$ augmented input features and ten classes derived from
+local eccentricity. We retain the canonical $10\%/10\%/80\%$
+train/validation/test masks and use $16$ NSD layers to match the long-range
+nature of the labels. Training uses AdamW with learning rate
+$5 \times 10^{-4}$, weight decay $10^{-5}$, and dropout $0.2$; checkpoints
+are selected by validation accuracy. Experiments are run on cloud GPUs using
+mixed bfloat16 precision when supported. Every run stores its resolved
+configuration, random seed, software and Git revisions, epoch-level metrics,
+best checkpoint, and final test results. Synthetic datasets are generated
+deterministically, while city data are cached in a persistent volume. This
+ensures that all reported results can be reconstructed from the recorded run
+identifier and configuration.
+
+\paragraph{Information-flow and geometric diagnostics.}
+For a trained model \(Z=f_\theta(X,G)\), we quantify the influence of source
+vertex \(u\) on target vertex \(v\) using the Jacobian block
+\(J_{v,u}=\partial z_v/\partial x_u\). We report its entrywise
+\(\ell_1\) norm, Frobenius norm, spectral norm, and the gradient norm of the
+ground-truth logit. These quantities are aggregated into total and mean
+influence at each shortest-path distance, with normalized decay curves,
+bootstrap confidence intervals, decay slopes, and an influence-weighted
+radius. Synthetic graphs use exact full blocks; for the city graphs,
+ground-truth-logit vector--Jacobian products are evaluated on a deterministic
+sample of test vertices, while full matrix and singular-value diagnostics are
+retained for a smaller subset. We additionally decompose each end-to-end
+Jacobian into products of local layer Jacobians along monotone shortest-path
+computational walks. This separates the sum of geodesic contributions, a
+canonical-path contribution, and the remaining non-geodesic component, while
+also measuring cancellation between paths. For NSD, we record the singular
+spectra and condition numbers of restriction and normalized transport maps at
+every layer. Finally, we compare the Ollivier--Ricci curvature of the original
+unweighted graph with that of the learned effective metric
+\(\ell_e=(\epsilon+\omega_e)^{-1}\), using the
+\texttt{OTDSinkhornMix} approximation with \(\alpha=0.5\). All diagnostics are
+stored alongside both initial and trained checkpoints, permitting direct
+analysis of how learning changes information flow, anisotropy, bottleneck
+strength, curvature, and predictive performance.

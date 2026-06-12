@@ -1,0 +1,19 @@
+.DS_Store
+.venv/
+.venv-curvature/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Experiment data and artifacts belong outside Git.
+data/
+runs/
+summaries/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+wandb/

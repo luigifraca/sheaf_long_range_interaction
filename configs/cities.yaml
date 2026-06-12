@@ -1,0 +1,45 @@
+task: cities
+datasets:
+  - name: paris
+    num_layers: 16
+  - name: shanghai
+    num_layers: 16
+grid:
+  variants: [general, orthogonal, diagonal, identity]
+  stalk_dims: [2, 3, 5]
+  hidden_dims: [16, 32]
+model:
+  alpha: 1.0
+  dropout: 0.2
+  input_dropout: 0.0
+  normalize_output: true
+training:
+  optimizer: adamw
+  epochs: 2000
+  patience: 200
+  lr: 0.0005
+  weight_decay: 0.00001
+  batch_size: 1
+  eval_batch_size: 1
+  gradient_clip: 1.0
+  num_workers: 0
+  samples: {}
+seeds: [0, 1, 2]
+tracking:
+  wandb: false
+  project: sheaf-long-range-cities
+profiles:
+  benchmark: {}
+  analysis:
+    grid:
+      preset: analysis
+    seeds: [0]
+  smoke:
+    datasets:
+      - name: paris
+        num_layers: 1
+      - name: shanghai
+        num_layers: 1
+    training:
+      epochs: 1
+      patience: 1

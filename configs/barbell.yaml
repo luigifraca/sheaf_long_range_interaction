@@ -1,0 +1,49 @@
+task: barbell
+datasets:
+  - name: barbell
+    num_layers: 3
+    params:
+      nodes_per_clique: 10
+      num_bridge_edges: 1
+      feature_dim: 40
+grid:
+  variants: [general, orthogonal, diagonal, identity]
+  stalk_dims: [2, 3, 5]
+  hidden_dims: [16, 32]
+model:
+  alpha: 1.0
+  dropout: 0.0
+  input_dropout: 0.0
+  normalize_output: false
+training:
+  optimizer: adam
+  epochs: 500
+  patience: 100
+  lr: 0.001
+  weight_decay: 0.0
+  batch_size: 1
+  eval_batch_size: 20
+  num_workers: 0
+  samples:
+    train: 100
+    val: 20
+    test: 100
+seeds: [0, 1, 2]
+tracking:
+  wandb: false
+  project: sheaf-long-range-barbell
+profiles:
+  benchmark: {}
+  analysis:
+    grid:
+      preset: analysis
+    seeds: [0]
+  smoke:
+    training:
+      epochs: 1
+      patience: 1
+      batch_size: 5
+      samples:
+        train: 10
+        val: 5
+        test: 5

@@ -1,0 +1,71 @@
+task: transfer
+datasets:
+  - name: ring
+    protocol: legacy
+    sweep_parameter: size
+    sweep_values: [2, 6, 10, 20, 30]
+    params:
+      classes: 5
+  - name: crossed_ring
+    protocol: legacy
+    sweep_parameter: size
+    sweep_values: [2, 6, 10, 20, 30]
+    params:
+      classes: 5
+  - name: clique_path
+    protocol: legacy
+    sweep_parameter: size
+    sweep_values: [2, 6, 10, 20, 30]
+    params:
+      classes: 5
+  - name: tree
+    protocol: legacy
+    sweep_parameter: depth
+    sweep_values: [2, 3, 4, 5, 6, 7, 8]
+    params:
+      classes: 5
+      arity: 2
+grid:
+  variants: [general, orthogonal, diagonal, identity]
+  stalk_dims: [2, 3, 5]
+  hidden_dims: [16, 32]
+model:
+  alpha: 1.0
+  dropout: 0.0
+  input_dropout: 0.0
+  normalize_output: true
+training:
+  optimizer: adam
+  epochs: 100
+  patience: 100
+  lr: 0.001
+  weight_decay: 0.0005
+  batch_size: 128
+  eval_batch_size: 500
+  num_workers: 0
+  samples:
+    train: 5000
+    val: 500
+    test: 500
+seeds: [0, 1, 2]
+tracking:
+  wandb: false
+  project: sheaf-long-range-transfer-legacy
+profiles:
+  benchmark: {}
+  smoke:
+    datasets:
+      - name: ring
+        protocol: legacy
+        params:
+          classes: 5
+          size: 2
+    training:
+      epochs: 1
+      patience: 1
+      batch_size: 10
+      eval_batch_size: 10
+      samples:
+        train: 20
+        val: 10
+        test: 10

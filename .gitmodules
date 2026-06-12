@@ -1,0 +1,6 @@
+[submodule "external/sheaf-mpnn"]
+	path = external/sheaf-mpnn
+	url = https://github.com/alessioborgi/sheaf-mpnn.git
+[submodule "external/GraphRicciCurvature"]
+	path = external/GraphRicciCurvature
+	url = https://github.com/saibalmars/GraphRicciCurvature.git
