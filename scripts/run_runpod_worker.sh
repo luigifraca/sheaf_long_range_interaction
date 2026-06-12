@@ -13,7 +13,7 @@ COMMON=(
   --seeds 0,1,2
   --storage-root "$STORAGE_ROOT"
   --device cuda:0
-  --precision bf16-mixed
+  --precision 32
   --wandb
   --wandb-project "$PROJECT"
 )

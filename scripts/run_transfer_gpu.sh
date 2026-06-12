@@ -6,7 +6,7 @@ GPU="0"
 PROFILE="benchmark"
 SEEDS="0,1,2"
 STORAGE_ROOT="${SLRI_STORAGE_ROOT:-/workspace/sheaf-lri-storage}"
-PRECISION="bf16-mixed"
+PRECISION="32"
 CONFIG="$ROOT/configs/transfer.yaml"
 FORCE=0
 DRY_RUN=0
@@ -58,4 +58,3 @@ export PYTHONPATH="$ROOT/src:$ROOT/external/sheaf-mpnn/src${PYTHONPATH:+:$PYTHON
 export SLRI_STORAGE_ROOT="$STORAGE_ROOT"
 export CUDA_VISIBLE_DEVICES="$GPU"
 exec "${CMD[@]}"
-

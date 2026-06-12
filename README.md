@@ -182,7 +182,10 @@ model subset defined in `configs/analysis_runpod.yaml`; city diagnostics use
 the bounded settings in `configs/analysis_cities_runpod.yaml`.
 
 All task launchers accept `--profile smoke`, `--seeds`, `--storage-root`,
-`--precision`, `--force`, `--dry-run`, and `--wandb`. Completed run IDs are
+`--precision`, `--force`, `--dry-run`, and `--wandb`. GPU launchers default to
+FP32 because the upstream general-map normalization uses
+`torch.linalg.eigh`, which is not implemented for CUDA BF16 tensors.
+Completed run IDs are
 skipped by default, so rerunning a launcher resumes the grid.
 
 Train the broader analysis model set and analyze completed checkpoints:
