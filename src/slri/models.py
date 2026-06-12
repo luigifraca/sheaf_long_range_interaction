@@ -7,7 +7,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 from sheaf_mpnn.nsd import NSDModel, NSDVariant
-from sheaf_mpnn.nsd.nsd_layers import BaseNSDConv
+from sheaf_mpnn.nsd.nsd_layers import BaseNSDConv, GeneralNSDConv
 from sheaf_mpnn.utils import apply_orthogonal_norm, cayley
 from torch import nn
 from torch_geometric.nn import GATConv, GCNConv, SAGEConv
@@ -21,6 +21,72 @@ SHEAF_VARIANTS = {
 }
 BASELINE_VARIANTS = {"gcn", "gat", "graphsage", "mlp"}
 MODEL_VARIANTS = SHEAF_VARIANTS | BASELINE_VARIANTS
+
+
+class ScalableGeneralNSDConv(GeneralNSDConv):
+    """General NSD normalization that supports very large CUDA node batches."""
+
+    def _apply_norm(self, self_map, cross_map, edge_index, num_nodes):
+        if not self_map.is_cuda or num_nodes <= 65_535:
+            return super()._apply_norm(
+                self_map, cross_map, edge_index, num_nodes
+            )
+        previous = torch.backends.cuda.preferred_linalg_library()
+        try:
+            torch.backends.cuda.preferred_linalg_library("magma")
+            return super()._apply_norm(
+                self_map, cross_map, edge_index, num_nodes
+            )
+        finally:
+            torch.backends.cuda.preferred_linalg_library(previous)
+
+
+class ScalableGeneralNSDModel(NSDModel):
+    """Upstream General NSD model with large-batch CUDA normalization."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        stalk_dim: int = 4,
+        hidden_dim: int = 16,
+        num_layers: int = 2,
+        alpha: float = 1.0,
+        add_self_loops: bool = True,
+        input_dropout: float = 0.0,
+        dropout: float = 0.0,
+        normalize_output: bool = True,
+        jknet: bool = False,
+        **_: Any,
+    ) -> None:
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            stalk_dim=stalk_dim,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            variant=NSDVariant.GENERAL,
+            alpha=alpha,
+            add_self_loops=add_self_loops,
+            input_dropout=input_dropout,
+            dropout=dropout,
+            normalize_output=normalize_output,
+            jknet=jknet,
+        )
+        context_dim = stalk_dim * hidden_dim
+        self.layers = nn.ModuleList(
+            [
+                ScalableGeneralNSDConv(
+                    stalk_dim=stalk_dim,
+                    in_channels=hidden_dim,
+                    hidden_dim=hidden_dim,
+                    context_dim=context_dim,
+                    alpha=alpha,
+                    add_self_loops=add_self_loops,
+                )
+                for _ in range(num_layers)
+            ]
+        )
 
 
 class IdentityNSDConv(BaseNSDConv):
@@ -443,6 +509,8 @@ def build_model(
     }
     if variant == "identity":
         return IdentityNSDModel(**common)
+    if variant == "general":
+        return ScalableGeneralNSDModel(**common)
     if variant == "frozen_orthogonal":
         return FrozenOrthogonalNSDModel(**common, map_seed=seed)
     if variant == "orthogonal" and stalk_dim == 1:
@@ -481,6 +549,8 @@ __all__ = [
     "FrozenOrthogonalNSDModel",
     "IdentityNSDConv",
     "IdentityNSDModel",
+    "ScalableGeneralNSDConv",
+    "ScalableGeneralNSDModel",
     "build_model",
     "build_nsd_model",
     "forward_model",

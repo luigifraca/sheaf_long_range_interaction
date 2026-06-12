@@ -3,7 +3,12 @@ import itertools
 import pytest
 import torch
 
-from slri.models import IdentityNSDConv, IdentityNSDModel, build_nsd_model
+from slri.models import (
+    IdentityNSDConv,
+    IdentityNSDModel,
+    ScalableGeneralNSDConv,
+    build_nsd_model,
+)
 
 
 def cycle_edges(nodes: int) -> torch.Tensor:
@@ -78,3 +83,14 @@ def test_identity_model_has_no_restriction_parameters():
         for layer in model.layers
     )
 
+
+def test_general_model_uses_large_batch_compatible_layers():
+    model = build_nsd_model(
+        variant="general",
+        in_channels=5,
+        out_channels=2,
+        stalk_dim=3,
+        hidden_dim=4,
+        num_layers=2,
+    )
+    assert all(isinstance(layer, ScalableGeneralNSDConv) for layer in model.layers)
