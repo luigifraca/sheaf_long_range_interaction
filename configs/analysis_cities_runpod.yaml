@@ -16,18 +16,18 @@ influence:
   barbell_samples: 100
   transfer_samples: 500
   transfer_all_pairs_samples: 100
-  city_targets: 2000
-  rich_targets: 64
-  retain_matrix_targets: 8
-  bootstrap_samples: 500
+  city_targets: 500
+  rich_targets: 32
+  retain_matrix_targets: 4
+  bootstrap_samples: 200
 pathwise:
   barbell_samples: 20
   transfer_samples: 100
-  city_targets: 8
+  city_targets: 6
   max_enumerated_paths: 10000
 geometry:
   enabled: true
-  max_edges_per_layer: 20000
+  max_edges_per_layer: 5000
 curvature:
   enabled: false
   alphas: [0.0, 0.5, 1.0]

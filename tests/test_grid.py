@@ -16,20 +16,20 @@ def test_barbell_grid_has_24_single_seed_runs_per_setting():
 def test_transfer_grid_uses_only_requested_sizes():
     runs = expand_grid(load_config(ROOT / "configs/transfer.yaml", "benchmark"))
     counts = count_runs_per_setting(runs)
-    assert len(counts) == 22
+    assert len(counts) == 12
     assert set(counts.values()) == {24}
     sizes = {
         run["dataset"]["params"]["size"]
         for run in runs
         if run["dataset"]["name"] != "tree"
     }
-    assert sizes == {2, 6, 10, 20, 30}
+    assert sizes == {2, 10, 30}
     depths = {
         run["dataset"]["params"]["depth"]
         for run in runs
         if run["dataset"]["name"] == "tree"
     }
-    assert depths == {2, 3, 4, 5, 6, 7, 8}
+    assert depths == {2, 4, 8}
 
 
 def test_smoke_transfer_is_one_setting_and_all_architectures():

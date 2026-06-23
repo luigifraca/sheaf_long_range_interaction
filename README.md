@@ -42,9 +42,9 @@ Each node predicts the mean input feature of the opposite clique.
 ### Graph transfer
 
 The clean protocol includes Ring, CrossedRing, CliquePath, and binary Tree
-topologies. Ring variants and CliquePath use exactly `2, 6, 10, 20, 30`
-nodes; Tree uses depths `2` through `8`. NSD depth is the actual shortest path
-between source and target.
+topologies. The default fast suite uses Ring, CrossedRing, and CliquePath
+sizes `2, 10, 30`, and Tree depths `2, 4, 8`. NSD depth is the actual shortest
+path between source and target.
 
 `configs/transfer_legacy.yaml` keeps duplicate edges and uses the test split
 for model selection to match the behavior of the reference runner. It should

@@ -37,7 +37,7 @@ profiles:
   analysis:
     grid:
       preset: analysis
-    seeds: [0]
+    seeds: [43]
   smoke:
     training:
       epochs: 1

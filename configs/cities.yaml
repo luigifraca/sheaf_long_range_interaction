@@ -15,8 +15,8 @@ model:
   normalize_output: true
 training:
   optimizer: adamw
-  epochs: 2000
-  patience: 200
+  epochs: 1500
+  patience: 150
   lr: 0.0005
   weight_decay: 0.00001
   batch_size: 1
@@ -33,7 +33,7 @@ profiles:
   analysis:
     grid:
       preset: analysis
-    seeds: [0]
+    seeds: [43]
   smoke:
     datasets:
       - name: paris

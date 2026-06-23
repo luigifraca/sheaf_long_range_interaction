@@ -12,7 +12,7 @@ influence:
   city_targets: 10000
   rich_targets: 256
   retain_matrix_targets: 8
-  bootstrap_samples: 500
+  bootstrap_samples: 200
 pathwise:
   barbell_samples: 20
   transfer_samples: 100

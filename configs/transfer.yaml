@@ -3,25 +3,25 @@ datasets:
   - name: ring
     protocol: clean
     sweep_parameter: size
-    sweep_values: [2, 6, 10, 20, 30]
+    sweep_values: [2, 10, 30]
     params:
       classes: 5
   - name: crossed_ring
     protocol: clean
     sweep_parameter: size
-    sweep_values: [2, 6, 10, 20, 30]
+    sweep_values: [2, 10, 30]
     params:
       classes: 5
   - name: clique_path
     protocol: clean
     sweep_parameter: size
-    sweep_values: [2, 6, 10, 20, 30]
+    sweep_values: [2, 10, 30]
     params:
       classes: 5
   - name: tree
     protocol: clean
     sweep_parameter: depth
-    sweep_values: [2, 3, 4, 5, 6, 7, 8]
+    sweep_values: [2, 4, 8]
     params:
       classes: 5
       arity: 2
@@ -56,7 +56,7 @@ profiles:
   analysis:
     grid:
       preset: analysis
-    seeds: [0]
+    seeds: [43]
   smoke:
     datasets:
       - name: ring
