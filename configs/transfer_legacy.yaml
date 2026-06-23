@@ -47,7 +47,7 @@ training:
     train: 5000
     val: 500
     test: 500
-seeds: [0, 1, 2]
+seeds: [43]
 tracking:
   wandb: false
   project: sheaf-long-range-transfer-legacy

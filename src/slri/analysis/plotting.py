@@ -24,7 +24,7 @@ def _finish(path: Path) -> None:
 
 def plot_distance_influence(table: pd.DataFrame, path: Path) -> None:
     plt.figure(figsize=(5.5, 3.5))
-    if not table.empty:
+    if not table.empty and "normalized_total_l1" in table:
         scopes = (
             table.groupby("metric_scope", sort=False)
             if "metric_scope" in table
@@ -37,12 +37,6 @@ def plot_distance_influence(table: pd.DataFrame, path: Path) -> None:
                 marker="o",
                 label=f"{scope}: shell total",
             )
-            plt.semilogy(
-                frame["distance"],
-                frame["normalized_mean_l1"].clip(lower=1e-30),
-                marker="s",
-                label=f"{scope}: shell mean",
-            )
         plt.legend()
     else:
         plt.text(0.5, 0.5, "No influence rows", ha="center")
@@ -53,7 +47,10 @@ def plot_distance_influence(table: pd.DataFrame, path: Path) -> None:
 
 def plot_pathwise(table: pd.DataFrame, path: Path) -> None:
     plt.figure(figsize=(4.5, 4.0))
-    if not table.empty:
+    if (
+        not table.empty
+        and {"full_influence_fro", "geodesic_influence_fro"} <= set(table)
+    ):
         plt.scatter(
             table["full_influence_fro"],
             table["geodesic_influence_fro"],
@@ -76,27 +73,32 @@ def plot_pathwise(table: pd.DataFrame, path: Path) -> None:
 
 def plot_curvature(table: pd.DataFrame, path: Path) -> None:
     plt.figure(figsize=(5.5, 3.5))
-    if not table.empty and "effective_curvature" in table:
-        for layer, frame in table.groupby("layer"):
+    if not table.empty and "curvature" in table:
+        frame = table
+        if "curvature_alpha" in frame:
+            frame = frame[frame["curvature_alpha"] == 0.5]
+        if "length_scheme" in frame:
+            frame = frame[frame["length_scheme"] == "omega_inverse"]
+        for layer, layer_frame in frame.groupby("layer"):
             plt.scatter(
-                frame["original_curvature"],
-                frame["effective_curvature"],
+                layer_frame["unit_curvature"],
+                layer_frame["curvature"],
                 s=8,
                 alpha=0.45,
                 label=f"layer {layer}",
             )
-        if table["layer"].nunique() <= 8:
+        if frame["layer"].nunique() <= 8:
             plt.legend(fontsize=7)
     else:
         plt.text(0.5, 0.5, "Curvature sidecar not run", ha="center")
-    plt.xlabel("Original Ollivier--Ricci curvature")
-    plt.ylabel("Learned effective curvature")
+    plt.xlabel("Unit-length Ollivier--Ricci curvature")
+    plt.ylabel("Primary learned-metric curvature")
     _finish(path)
 
 
 def plot_bottleneck(table: pd.DataFrame, path: Path) -> None:
     plt.figure(figsize=(5.5, 3.5))
-    if not table.empty:
+    if not table.empty and "omega" in table:
         frame = table[~table["is_self_loop"]]
         summary = frame.groupby("layer")["omega"].agg(["min", "mean", "max"])
         plt.plot(summary.index, summary["mean"], marker="o", label="mean")
@@ -113,7 +115,7 @@ def plot_bottleneck(table: pd.DataFrame, path: Path) -> None:
 
 def plot_anisotropy(table: pd.DataFrame, path: Path) -> None:
     plt.figure(figsize=(5.5, 3.5))
-    if not table.empty:
+    if not table.empty and "normalized_transport_condition_number" in table:
         frame = table[~table["is_self_loop"]]
         grouped = frame.groupby("layer")[
             "normalized_transport_condition_number"
@@ -124,4 +126,33 @@ def plot_anisotropy(table: pd.DataFrame, path: Path) -> None:
         plt.text(0.5, 0.5, "No sheaf singular spectra", ha="center")
     plt.xlabel("Diffusion layer")
     plt.ylabel("Median transport condition number")
+    _finish(path)
+
+
+def plot_orthogonal_restriction_rotations(table: pd.DataFrame, path: Path) -> None:
+    plt.figure(figsize=(6.5, 3.8))
+    if not table.empty and "rotation_angle" in table:
+        frame = table[table["map_kind"] == "transport"]
+        if frame.empty:
+            frame = table
+        for key, group in frame.groupby(
+            ["path_index", "path_position", "source", "target"],
+            sort=False,
+        ):
+            path_index, path_position, source, target = key
+            sign = int(group["determinant_sign"].iloc[0])
+            marker = "o" if sign >= 0 else "x"
+            label = f"p{path_index}:{path_position} {source}->{target}"
+            plt.plot(
+                group["layer"],
+                group["rotation_angle"],
+                marker=marker,
+                label=label,
+            )
+        if frame.groupby(["path_index", "path_position"]).ngroups <= 8:
+            plt.legend(fontsize=7)
+    else:
+        plt.text(0.5, 0.5, "No orthogonal rotations", ha="center")
+    plt.xlabel("Diffusion layer")
+    plt.ylabel("Rotation angle (radians)")
     _finish(path)

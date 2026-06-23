@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GPU="0"
 PROFILE="benchmark"
-SEEDS="0,1,2"
+SEEDS="43"
 STORAGE_ROOT="${SLRI_STORAGE_ROOT:-/workspace/sheaf-lri-storage}"
 PRECISION="32"
 CONFIG="$ROOT/configs/transfer.yaml"
@@ -15,7 +15,7 @@ WANDB_PROJECT=""
 WANDB_ENTITY=""
 
 usage() {
-  echo "Usage: $0 [--gpu ID] [--profile benchmark|smoke] [--seeds 0,1,2]"
+  echo "Usage: $0 [--gpu ID] [--profile benchmark|smoke] [--seeds 43]"
   echo "          [--storage-root PATH] [--legacy] [--force] [--dry-run]"
   echo "          [--precision bf16-mixed|16-mixed|32] [--wandb]"
 }

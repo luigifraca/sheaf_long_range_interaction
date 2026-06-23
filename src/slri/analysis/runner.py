@@ -12,8 +12,7 @@ import pandas as pd
 import torch
 import yaml
 from scipy.stats import spearmanr
-from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
-from sklearn.metrics import accuracy_score, mean_squared_error
+from sklearn.linear_model import LinearRegression
 from torch_geometric.data import Data
 from torch_geometric.utils import k_hop_subgraph
 
@@ -22,6 +21,7 @@ from slri.analysis.curvature import curvature_payload, run_curvature_sidecar
 from slri.analysis.geometry import (
     GeometrySnapshot,
     canonical_transport_product,
+    extract_orthogonal_restriction_rotations,
     extract_sheaf_geometry,
 )
 from slri.analysis.influence import (
@@ -35,6 +35,7 @@ from slri.analysis.plotting import (
     plot_bottleneck,
     plot_curvature,
     plot_distance_influence,
+    plot_orthogonal_restriction_rotations,
     plot_pathwise,
 )
 from slri.config import deep_merge
@@ -64,13 +65,25 @@ DEFAULT_ANALYSIS = {
     "geometry": {"enabled": True},
     "curvature": {
         "enabled": True,
-        "alpha": 0.5,
+        "alphas": [0.0, 0.5, 1.0],
         "epsilon": 1e-8,
         "proc": 1,
     },
-    "probes": {"enabled": True, "max_samples": 10_000},
     "layerwise": {"retain_embedding_nodes": 256},
 }
+
+
+def _normalize_analysis_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Normalize backward-compatible analysis config fields."""
+    result = copy.deepcopy(config)
+    curvature = result.setdefault("curvature", {})
+    if "alpha" in curvature:
+        curvature["alphas"] = [float(curvature.pop("alpha"))]
+    else:
+        curvature["alphas"] = [
+            float(value) for value in curvature.get("alphas", [0.0, 0.5, 1.0])
+        ]
+    return result
 
 
 def load_analysis_config(
@@ -79,12 +92,14 @@ def load_analysis_config(
 ) -> dict[str, Any]:
     """Load analysis-only configuration without changing training grids."""
     if path is None:
-        return copy.deepcopy(DEFAULT_ANALYSIS)
+        return _normalize_analysis_config(DEFAULT_ANALYSIS)
     raw = yaml.safe_load(Path(path).read_text())
     profiles = raw.pop("profiles", {})
     if profile not in profiles:
         raise ValueError(f"Unknown analysis profile {profile!r}")
-    return deep_merge(deep_merge(DEFAULT_ANALYSIS, raw), profiles[profile])
+    return _normalize_analysis_config(
+        deep_merge(deep_merge(DEFAULT_ANALYSIS, raw), profiles[profile])
+    )
 
 
 def _write_table(table: pd.DataFrame, path: Path) -> None:
@@ -307,6 +322,100 @@ def _pathwise_jobs(
     return jobs
 
 
+def _canonical_path(
+    edge_index: torch.Tensor,
+    source: int,
+    target: int,
+    num_nodes: int,
+) -> list[int]:
+    distances = shortest_path_distances(edge_index, target, num_nodes)
+    if int(distances[source].item()) < 0:
+        return []
+    adjacency: list[list[int]] = [[] for _ in range(num_nodes)]
+    for left, right in edge_index.detach().cpu().t().tolist():
+        adjacency[left].append(right)
+    path = [source]
+    node = source
+    while node != target:
+        candidates = [
+            neighbor
+            for neighbor in adjacency[node]
+            if int(distances[neighbor].item()) == int(distances[node].item()) - 1
+        ]
+        if not candidates:
+            return []
+        node = min(candidates)
+        path.append(node)
+    return path
+
+
+def _critical_paths(
+    bundle: DatasetBundle,
+    config: dict[str, Any],
+    task: str,
+    seed: int,
+) -> list[list[int]]:
+    graphs = _test_graphs(bundle)
+    if not graphs:
+        return []
+    graph = graphs[0]
+    if task == "barbell" and hasattr(graph, "bridge_edges"):
+        paths = []
+        for left, right in graph.bridge_edges.detach().cpu().tolist():
+            paths.extend(([int(left), int(right)], [int(right), int(left)]))
+        return paths
+    if task == "transfer":
+        return [
+            _canonical_path(
+                graph.edge_index,
+                int(graph.target_index.item()),
+                int(graph.source_index.item()),
+                int(graph.num_nodes),
+            )
+        ]
+    if task == "cities":
+        paths = []
+        max_hops = int(config["max_hops"]["cities"])
+        targets = _city_targets(
+            graph, int(config["pathwise"]["city_targets"]), seed + 9176
+        )
+        for target in targets:
+            subset, sub_edges, mapping, _ = k_hop_subgraph(
+                target,
+                max_hops,
+                graph.edge_index,
+                relabel_nodes=True,
+                num_nodes=int(graph.num_nodes),
+            )
+            root = int(mapping[0].item())
+            distances = shortest_path_distances(
+                sub_edges,
+                root,
+                subset.numel(),
+            )
+            reachable = torch.where(distances >= 0)[0]
+            if reachable.numel() == 0:
+                continue
+            source_local = int(
+                reachable[torch.argmax(distances[reachable])].item()
+            )
+            local_path = _canonical_path(
+                sub_edges, source_local, root, int(subset.numel())
+            )
+            if local_path:
+                paths.append([int(subset[node].item()) for node in local_path])
+        return paths
+    return []
+
+
+def _required_edges(paths: list[list[int]]) -> set[tuple[int, int]]:
+    return {
+        (min(source, target), max(source, target))
+        for path in paths
+        for source, target in zip(path, path[1:], strict=False)
+    }
+
+
 def _pathwise_table(
     model: torch.nn.Module,
     bundle: DatasetBundle,
@@ -381,29 +490,7 @@ def _layerwise_metrics(
             ),
             "feature_variance": float(hidden.var(dim=0).mean().item()),
             "dirichlet_energy": dirichlet,
-            "probe_metric": float("nan"),
-            "probe_metric_name": None,
         }
-        if config["probes"]["enabled"]:
-            max_samples = int(config["probes"]["max_samples"])
-            values = hidden.detach().cpu().numpy()
-            if bundle.task_type == "node_classification":
-                train = torch.where(graph.train_mask)[0].cpu().numpy()[:max_samples]
-                test = torch.where(graph.test_mask)[0].cpu().numpy()[:max_samples]
-                labels = graph.y.detach().cpu().numpy()
-                probe = LogisticRegression(max_iter=200, n_jobs=1)
-                probe.fit(values[train], labels[train])
-                row["probe_metric"] = float(
-                    accuracy_score(labels[test], probe.predict(values[test]))
-                )
-                row["probe_metric_name"] = "accuracy"
-            elif bundle.task_type == "node_regression":
-                labels = graph.y.detach().cpu().numpy()
-                probe = Ridge(alpha=1.0).fit(values, labels)
-                row["probe_metric"] = float(
-                    mean_squared_error(labels, probe.predict(values))
-                )
-                row["probe_metric_name"] = "mse"
         rows.append(row)
     embeddings = {
         "node_indices": retained_nodes_cpu,
@@ -425,14 +512,12 @@ def _correlations(path_table: pd.DataFrame) -> pd.DataFrame:
         "canonical_influence_fro",
         "transport_path_fro",
         "transport_path_spectral",
-        "transport_path_condition_number",
-        "transport_path_effective_rank",
         "omega_path_product",
         "omega_path_min",
         "omega_path_mean",
-        "path_original_curvature_mean",
+        "path_unit_curvature_mean",
         "path_effective_curvature_mean",
-        "path_curvature_change_mean",
+        "path_curvature_change_from_unit_mean",
         "path_effective_curvature_min",
         "path_cancellation",
         "distance",
@@ -470,35 +555,40 @@ def _attach_path_curvature(
     if path_table.empty or curvature.empty:
         return path_table
     updated = path_table.copy()
+    primary = curvature
+    if "curvature_alpha" in primary:
+        primary = primary[primary["curvature_alpha"] == 0.5]
+    if "length_scheme" in primary:
+        primary = primary[primary["length_scheme"] == "omega_inverse"]
     lookup = {
         (
             int(row.layer),
             min(int(row.source), int(row.target)),
             max(int(row.source), int(row.target)),
         ): row
-        for row in curvature.itertuples()
+        for row in primary.itertuples()
     }
     for index, row in updated.iterrows():
         path = row["canonical_path"]
         records = []
         for layer, (source, target) in enumerate(
-            zip(path, path[1:], strict=True)
+            zip(path, path[1:], strict=False)
         ):
             record = lookup.get((layer, min(source, target), max(source, target)))
             if record is not None:
                 records.append(record)
         if records:
-            updated.loc[index, "path_original_curvature_mean"] = np.mean(
-                [record.original_curvature for record in records]
+            updated.loc[index, "path_unit_curvature_mean"] = np.mean(
+                [record.unit_curvature for record in records]
             )
             updated.loc[index, "path_effective_curvature_mean"] = np.mean(
-                [record.effective_curvature for record in records]
+                [record.curvature for record in records]
             )
-            updated.loc[index, "path_curvature_change_mean"] = np.mean(
-                [record.curvature_change for record in records]
+            updated.loc[index, "path_curvature_change_from_unit_mean"] = np.mean(
+                [record.curvature_change_from_unit for record in records]
             )
             updated.loc[index, "path_effective_curvature_min"] = np.min(
-                [record.effective_curvature for record in records]
+                [record.curvature for record in records]
             )
     return updated
 
@@ -514,7 +604,7 @@ def analyze_run(
     project_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Analyze one checkpoint and persist all tables, matrices, and figures."""
-    config = deep_merge(DEFAULT_ANALYSIS, config or {})
+    config = _normalize_analysis_config(deep_merge(DEFAULT_ANALYSIS, config or {}))
     run = storage.show(run_id)
     run_path = Path(run["artifact_path"])
     run_summary = run.get("summary") or {}
@@ -558,7 +648,11 @@ def analyze_run(
         bundle = load_experiment_data(spec, storage)
         model = _checkpoint_model(spec, bundle, checkpoint_path, device)
         graphs = _test_graphs(bundle)
+        critical_paths = _critical_paths(
+            bundle, config, run["task"], int(spec["seed"])
+        )
         geometry = None
+        rotation_table = pd.DataFrame()
         if config["geometry"]["enabled"]:
             geometry = extract_sheaf_geometry(
                 model,
@@ -567,6 +661,13 @@ def analyze_run(
                 max_edges_per_layer=config["geometry"].get(
                     "max_edges_per_layer"
                 ),
+                required_edges=_required_edges(critical_paths),
+            )
+            rotation_table = extract_orthogonal_restriction_rotations(
+                model,
+                graphs[0].x,
+                graphs[0].edge_index,
+                paths=critical_paths,
             )
         pair_table, hop_table, influence_matrices, influence_summary = (
             _influence_tables(
@@ -602,7 +703,7 @@ def analyze_run(
             payload = curvature_payload(
                 graphs[0].edge_index,
                 geometry,
-                alpha=float(config["curvature"]["alpha"]),
+                alphas=config["curvature"]["alphas"],
                 epsilon=float(config["curvature"]["epsilon"]),
                 proc=int(config["curvature"]["proc"]),
                 shortest_path=(
@@ -627,6 +728,10 @@ def analyze_run(
         _write_table(path_table, path / "tables" / "path_jacobians.parquet")
         _write_table(
             geometry_table, path / "tables" / "sheaf_edge_geometry.parquet"
+        )
+        _write_table(
+            rotation_table,
+            path / "tables" / "orthogonal_restriction_rotations.parquet",
         )
         _write_table(
             curvature_table, path / "tables" / "curvature_edges.parquet"
@@ -666,6 +771,10 @@ def analyze_run(
         plot_anisotropy(
             geometry_table, path / "figures" / "anisotropy_spectra.pdf"
         )
+        plot_orthogonal_restriction_rotations(
+            rotation_table,
+            path / "figures" / "orthogonal_restriction_rotations.pdf",
+        )
         summary = {
             "analysis_id": analysis_id,
             "run_id": run_id,
@@ -679,6 +788,7 @@ def analyze_run(
             "hop_rows": len(hop_table),
             "pathwise_rows": len(path_table),
             "geometry_rows": len(geometry_table),
+            "orthogonal_rotation_rows": len(rotation_table),
             "curvature_rows": len(curvature_table),
             "layerwise_rows": len(layer_table),
             **influence_summary,

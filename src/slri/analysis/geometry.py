@@ -30,6 +30,7 @@ class GeometrySnapshot:
     table: pd.DataFrame
     normalized_transports: dict[tuple[int, int, int], torch.Tensor]
     strengths_by_layer: dict[int, dict[tuple[int, int], float]]
+    laplacian_by_layer: dict[int, dict[tuple[int, int], float]]
 
 
 def matrix_diagnostics(
@@ -121,6 +122,7 @@ def extract_sheaf_geometry(
     edge_index: torch.Tensor,
     *,
     max_edges_per_layer: int | None = None,
+    required_edges: set[tuple[int, int]] | None = None,
 ) -> GeometrySnapshot | None:
     """Extract restriction, transport, and normalized transport diagnostics."""
     if not hasattr(model, "stalk_dim") or not hasattr(model, "layers"):
@@ -134,6 +136,11 @@ def extract_sheaf_geometry(
     rows: list[dict[str, Any]] = []
     normalized: dict[tuple[int, int, int], torch.Tensor] = {}
     strengths: dict[int, dict[tuple[int, int], list[float]]] = {}
+    laplacians: dict[int, dict[tuple[int, int], list[float]]] = {}
+    required = {
+        (min(source, target), max(source, target))
+        for source, target in (required_edges or set())
+    }
     for layer_index, layer in enumerate(model.layers):
         layer_edges = edge_index
         if layer.add_self_loops:
@@ -185,6 +192,21 @@ def extract_sheaf_geometry(
                 steps=max_edges_per_layer,
                 device=layer_edges.device,
             ).round().long().unique()
+            required_rows = [
+                index
+                for index, (source, target) in enumerate(
+                    layer_edges.detach().cpu().t().tolist()
+                )
+                if source != target
+                and (min(source, target), max(source, target)) in required
+            ]
+            if required_rows:
+                selected_rows = torch.cat(
+                    (
+                        selected_rows,
+                        torch.tensor(required_rows, device=layer_edges.device),
+                    )
+                ).unique()
         else:
             selected_rows = torch.arange(edge_count, device=layer_edges.device)
         selected_edges = layer_edges[:, selected_rows].detach().cpu().t().tolist()
@@ -206,8 +228,9 @@ def extract_sheaf_geometry(
                 "source": source,
                 "target": target,
                 "is_self_loop": source == target,
-                "alpha": alpha,
+                "diffusion_alpha": alpha,
                 "omega": omega,
+                "laplacian_entry_fro": normalized_diag["fro"],
             }
             for prefix, diagnostics in (
                 ("restriction_dst", dst_diag),
@@ -230,6 +253,9 @@ def extract_sheaf_geometry(
                 strengths.setdefault(layer_index, {}).setdefault(edge, []).append(
                     omega
                 )
+                laplacians.setdefault(layer_index, {}).setdefault(edge, []).append(
+                    normalized_diag["fro"]
+                )
     reduced_strengths = {
         layer: {
             edge: float(sum(values) / len(values))
@@ -237,10 +263,18 @@ def extract_sheaf_geometry(
         }
         for layer, layer_strengths in strengths.items()
     }
+    reduced_laplacians = {
+        layer: {
+            edge: float(sum(values) / len(values))
+            for edge, values in layer_laplacians.items()
+        }
+        for layer, layer_laplacians in laplacians.items()
+    }
     return GeometrySnapshot(
         table=pd.DataFrame(rows),
         normalized_transports=normalized,
         strengths_by_layer=reduced_strengths,
+        laplacian_by_layer=reduced_laplacians,
     )
 
 
@@ -284,3 +318,93 @@ def canonical_transport_product(
             }
         )
     return metrics, product
+
+
+def _rotation_metrics(matrix: torch.Tensor) -> dict[str, Any]:
+    stalk_dim = matrix.size(0)
+    determinant = float(torch.linalg.det(matrix.float()).item())
+    row: dict[str, Any] = {
+        "determinant": determinant,
+        "determinant_sign": 1 if determinant >= 0 else -1,
+        "matrix": matrix.detach().cpu().tolist(),
+    }
+    if stalk_dim == 2:
+        row["rotation_angle"] = float(
+            torch.atan2(matrix[1, 0], matrix[0, 0]).item()
+        )
+    elif stalk_dim == 3:
+        value = ((torch.trace(matrix.float()) - 1.0) / 2.0).clamp(-1.0, 1.0)
+        row["rotation_angle"] = float(torch.arccos(value).item())
+    else:
+        row["rotation_angle"] = float("nan")
+    return row
+
+
+def extract_orthogonal_restriction_rotations(
+    model: nn.Module,
+    x: torch.Tensor,
+    edge_index: torch.Tensor,
+    *,
+    paths: list[list[int]],
+) -> pd.DataFrame:
+    """Extract selected orthogonal maps as layer-by-layer rotations."""
+    if (
+        not hasattr(model, "stalk_dim")
+        or int(model.stalk_dim) not in {2, 3}
+        or not hasattr(model, "layers")
+        or not paths
+    ):
+        return pd.DataFrame()
+    model = model.to(dtype=torch.float32).eval()
+    device = next(model.parameters()).device
+    x = x.to(device=device, dtype=torch.float32)
+    edge_index = edge_index.to(device)
+    adapter = ModelTraceAdapter(model)
+    states, _ = adapter.trace(x, edge_index)
+    selected_edges = {
+        (source, target)
+        for path in paths
+        for source, target in zip(path, path[1:], strict=False)
+    }
+    rows: list[dict[str, Any]] = []
+    for layer_index, layer in enumerate(model.layers):
+        if not isinstance(layer, (OrthogonalNSDConv, FrozenOrthogonalNSDConv)):
+            continue
+        layer_edges = edge_index
+        if layer.add_self_loops:
+            layer_edges, _ = add_self_loops(layer_edges, num_nodes=x.size(0))
+        hidden = states[layer_index]
+        dst_map, src_map = _raw_maps(layer, hidden, layer_edges)
+        transport = dst_map.transpose(-2, -1) @ src_map
+        edge_to_rows: dict[tuple[int, int], list[int]] = {}
+        for edge_row, (source, target) in enumerate(
+            layer_edges.detach().cpu().t().tolist()
+        ):
+            if (source, target) in selected_edges:
+                edge_to_rows.setdefault((source, target), []).append(edge_row)
+        for path_index, path in enumerate(paths):
+            for path_position, (source, target) in enumerate(
+                zip(path, path[1:], strict=False)
+            ):
+                edge_rows = edge_to_rows.get((source, target))
+                if not edge_rows:
+                    continue
+                edge_row = edge_rows[0]
+                for map_kind, matrix in (
+                    ("restriction_dst", dst_map[edge_row]),
+                    ("restriction_src", src_map[edge_row]),
+                    ("transport", transport[edge_row]),
+                ):
+                    rows.append(
+                        {
+                            "path_index": path_index,
+                            "path_position": path_position,
+                            "layer": layer_index,
+                            "source": source,
+                            "target": target,
+                            "map_kind": map_kind,
+                            "stalk_dim": int(model.stalk_dim),
+                            **_rotation_metrics(matrix),
+                        }
+                    )
+    return pd.DataFrame(rows)

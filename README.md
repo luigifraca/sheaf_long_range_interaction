@@ -21,14 +21,15 @@ The supported NSD grid is:
 - maps: General, Orthogonal/Cayley, Diagonal, fixed Identity
 - stalk dimensions: 2, 3, 5
 - hidden dimensions: 16, 32
-- benchmark seeds: 0, 1, 2
+- benchmark seed: 43
 
-That is 24 architectures and 72 seeded runs for every dataset setting.
+That is 24 single-seed runs for every dataset setting. Pass
+`--seeds 0,1,2` to the launchers when you want the broader three-seed suite.
 
 The optional `analysis` profile adds GCN, GAT, GraphSAGE, MLP, fixed random
 orthogonal sheaves, scalar-stalk controls, and constant-total-width
 comparisons. It contains 46 representative architectures per dataset setting
-and defaults to seed 0. The original 72-run benchmark grid is unchanged.
+and defaults to seed 43.
 
 ## Tasks
 
@@ -82,9 +83,8 @@ never mixed during aggregation. Full matrices and singular spectra are
 computed for the deterministic rich subset configured in
 `configs/analysis.yaml`.
 
-At graph distance \(h\), the code records both shell total
-\(T_h(v)=\sum_{d(u,v)=h} I(v,u)\) and shell mean
-\(M_h(v)=T_h(v)/|\{u:d(u,v)=h\}|\). It then reports their focal-node averages,
+At graph distance \(h\), the code records the shell total
+\(T_h(v)=\sum_{d(u,v)=h} I(v,u)\). It then reports its focal-node average,
 normalization by the distance-zero value, 95% bootstrap confidence intervals,
 the log-scale decay slope, and the influence-weighted radius.
 
@@ -118,14 +118,18 @@ effective rank. The scalar effective strength is
 
 \[
 \omega_e =
-|\alpha|\,\|B_e\|_F/\sqrt{d}.
+|\alpha_{\mathrm{diff}}|\,\|B_e\|_F/\sqrt{d}.
 \]
 
-Original and learned effective Ollivier-Ricci curvature are computed using the
-pinned `GraphRicciCurvature` submodule, `OTDSinkhornMix`, and
-\(\alpha=0.5\). Learned strengths become metric lengths through
-\(\ell_e=(\epsilon+\omega_e)^{-1}\), followed by median normalization. ATD is
-not used.
+Ollivier-Ricci curvature is computed using the pinned `GraphRicciCurvature`
+submodule and `OTDSinkhornMix` for lazy-walk idleness
+\(\alpha_{\mathrm{curv}}\in\{0,0.5,1\}\). The analysis compares unit lengths,
+the learned effective metric
+\(\ell_e=(\epsilon+\omega_e)^{-1}\), and two naive sheaf-Laplacian baselines:
+\(\|L_{ij}\|_F\) and \((\epsilon+\|L_{ij}\|_F)^{-1}\), each median-normalized.
+The primary path-curvature summaries use
+\(\alpha_{\mathrm{curv}}=0.5\) and the learned effective metric. ATD is not
+used.
 
 GraphRicciCurvature runs in a separate Python 3.12 environment:
 
@@ -191,9 +195,9 @@ skipped by default, so rerunning a launcher resumes the grid.
 Train the broader analysis model set and analyze completed checkpoints:
 
 ```bash
-scripts/run_barbell_gpu.sh --gpu 0 --profile analysis --seeds 0
-scripts/run_transfer_gpu.sh --gpu 0 --profile analysis --seeds 0
-scripts/run_cities_gpu.sh --gpu 0 --profile analysis --seeds 0
+scripts/run_barbell_gpu.sh --gpu 0 --profile analysis --seeds 43
+scripts/run_transfer_gpu.sh --gpu 0 --profile analysis --seeds 43
+scripts/run_cities_gpu.sh --gpu 0 --profile analysis --seeds 43
 
 scripts/run_analysis_gpu.sh --gpu 0 --profile benchmark \
   --checkpoints initial,best
@@ -277,26 +281,29 @@ schedulers.
 Each analysis directory contains the following source-of-truth artifacts:
 
 - `influence_pairs.parquet`: one row per measured source-target pair, with
-  distance, measurement scope, Jacobian norms, class-logit gradient, and
-  singular diagnostics.
-- `influence_hops.parquet`: shell totals, shell means, normalized curves,
+  distance, measurement scope, core Jacobian norms, class-logit gradient, and
+  optional singular spectra for rich targets.
+- `influence_hops.parquet`: shell totals, normalized total-influence curves,
   shell sizes, and confidence intervals for each measurement scope.
 - `path_jacobians.parquet`: full, geodesic, canonical, and residual norms,
   path counts, cancellation, layerwise gradient flow, and transport-path
   diagnostics.
 - `sheaf_edge_geometry.parquet`: restriction and transport spectra,
-  anisotropy, effective ranks, condition numbers, and \(\omega_e\) by layer.
-- `curvature_edges.parquet`: original curvature, learned effective curvature,
-  curvature change, strength, and normalized length per edge and layer.
+  anisotropy, effective ranks, condition numbers, \(\omega_e\), and
+  \(\|L_{ij}\|_F\) by layer.
+- `orthogonal_restriction_rotations.parquet`: selected \(d=2\) and \(d=3\)
+  orthogonal restriction and transport maps expressed as layerwise rotations.
+- `curvature_edges.parquet`: long-form curvature by idleness alpha, edge-length
+  scheme, edge, and layer, including unit-curvature references and changes.
 - `geometry_influence_correlations.parquet`: Spearman correlations and
   distance-controlled regressions predicting measured path influence.
 - `layerwise_metrics.parquet`: hidden-state norm, variance, Dirichlet energy,
-  optional probes, and task metrics through diffusion depth.
+  and retained sampled embeddings through diffusion depth.
 - `synthetic_jacobians.pt` or `sampled_city_jacobians.pt`: retained full
   matrices for reconstructing stored norms, plus deterministic sampled hidden
   embeddings at every layer.
 - `figures/*.pdf`: distance decay, full-versus-pathwise Jacobians, curvature,
-  bottleneck evolution, and anisotropy spectra.
+  bottleneck evolution, anisotropy spectra, and orthogonal rotation plots.
 
 `summary.json` records row counts, checkpoint, curvature status, influence
 radii, decay slopes, and paths to the artifact groups. Comparing `initial`

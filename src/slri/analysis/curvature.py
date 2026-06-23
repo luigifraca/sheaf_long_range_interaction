@@ -19,7 +19,7 @@ def curvature_payload(
     edge_index: torch.Tensor,
     snapshot: GeometrySnapshot | None,
     *,
-    alpha: float = 0.5,
+    alphas: list[float] | tuple[float, ...] = (0.0, 0.5, 1.0),
     epsilon: float = 1e-8,
     proc: int = 1,
     shortest_path: str = "all_pairs",
@@ -32,26 +32,39 @@ def curvature_payload(
             if source != target
         }
     )
-    layers = {}
+    omega_layers = {}
+    laplacian_layers = {}
     if snapshot is not None:
-        layers = {
+        omega_layers = {
             str(layer): {
                 f"{source}:{target}": strength
                 for (source, target), strength in strengths.items()
             }
             for layer, strengths in snapshot.strengths_by_layer.items()
         }
-    if not layers:
-        layers = {
+        laplacian_layers = {
+            str(layer): {
+                f"{source}:{target}": value
+                for (source, target), value in values.items()
+            }
+            for layer, values in snapshot.laplacian_by_layer.items()
+        }
+    if not omega_layers:
+        omega_layers = {
             "-1": {
                 f"{source}:{target}": 1.0 for source, target in edges
             }
         }
+    if not laplacian_layers:
+        laplacian_layers = {
+            layer: dict(values) for layer, values in omega_layers.items()
+        }
     return {
         "num_nodes": int(edge_index.max().item()) + 1,
         "edges": edges,
-        "strengths_by_layer": layers,
-        "alpha": alpha,
+        "omega_by_layer": omega_layers,
+        "laplacian_by_layer": laplacian_layers,
+        "alphas": [float(alpha) for alpha in alphas],
         "epsilon": epsilon,
         "method": "OTDSinkhornMix",
         "exp_power": 2,

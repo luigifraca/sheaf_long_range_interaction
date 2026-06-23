@@ -10,7 +10,7 @@ LOG_ROOT="$VOLUME_ROOT/deployments/$DEPLOYMENT_ID/logs"
 PROJECT="${WANDB_PROJECT:-sheaf-long-range-full}"
 COMMON=(
   --profile analysis
-  --seeds 0,1,2
+  --seeds 43
   --storage-root "$STORAGE_ROOT"
   --device cuda:0
   --precision 32

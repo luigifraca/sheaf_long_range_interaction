@@ -30,12 +30,9 @@ geometry:
   max_edges_per_layer:
 curvature:
   enabled: true
-  alpha: 0.5
+  alphas: [0.0, 0.5, 1.0]
   epsilon: 1.0e-8
   proc: 1
-probes:
-  enabled: true
-  max_samples: 10000
 layerwise:
   retain_embedding_nodes: 256
 profiles:

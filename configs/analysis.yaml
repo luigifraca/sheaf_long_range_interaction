@@ -22,12 +22,9 @@ geometry:
   enabled: true
 curvature:
   enabled: true
-  alpha: 0.5
+  alphas: [0.0, 0.5, 1.0]
   epsilon: 1.0e-8
   proc: 1
-probes:
-  enabled: true
-  max_samples: 10000
 layerwise:
   retain_embedding_nodes: 256
 profiles:
@@ -48,8 +45,6 @@ profiles:
       city_targets: 0
       max_enumerated_paths: 100
     curvature:
-      enabled: false
-    probes:
       enabled: false
     layerwise:
       retain_embedding_nodes: 32

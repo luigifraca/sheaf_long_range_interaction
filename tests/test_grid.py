@@ -6,17 +6,18 @@ from slri.grid import config_hash, count_runs_per_setting, expand_grid
 ROOT = Path(__file__).parents[1]
 
 
-def test_barbell_grid_has_72_seeded_runs_per_setting():
+def test_barbell_grid_has_24_single_seed_runs_per_setting():
     runs = expand_grid(load_config(ROOT / "configs/barbell.yaml", "benchmark"))
-    assert len(runs) == 72
-    assert set(count_runs_per_setting(runs).values()) == {72}
+    assert len(runs) == 24
+    assert {run["seed"] for run in runs} == {43}
+    assert set(count_runs_per_setting(runs).values()) == {24}
 
 
 def test_transfer_grid_uses_only_requested_sizes():
     runs = expand_grid(load_config(ROOT / "configs/transfer.yaml", "benchmark"))
     counts = count_runs_per_setting(runs)
     assert len(counts) == 22
-    assert set(counts.values()) == {72}
+    assert set(counts.values()) == {24}
     sizes = {
         run["dataset"]["params"]["size"]
         for run in runs
@@ -33,7 +34,7 @@ def test_transfer_grid_uses_only_requested_sizes():
 
 def test_smoke_transfer_is_one_setting_and_all_architectures():
     runs = expand_grid(load_config(ROOT / "configs/transfer.yaml", "smoke"))
-    assert len(runs) == 72
+    assert len(runs) == 24
     assert {run["model"]["variant"] for run in runs} == {
         "general",
         "orthogonal",

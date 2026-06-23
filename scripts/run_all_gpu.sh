@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GPUS="0"
 PARALLEL=0
 PROFILE="benchmark"
-SEEDS="0,1,2"
+SEEDS="43"
 STORAGE_ROOT="${SLRI_STORAGE_ROOT:-/workspace/sheaf-lri-storage}"
 PRECISION="32"
 FORCE=0
@@ -16,7 +16,7 @@ WANDB_ENTITY=""
 
 usage() {
   echo "Usage: $0 [--gpus 0|0,1,2] [--parallel|--sequential]"
-  echo "          [--profile benchmark|smoke] [--seeds 0,1,2]"
+  echo "          [--profile benchmark|smoke] [--seeds 43]"
   echo "          [--storage-root PATH] [--precision ...] [--force]"
   echo "          [--dry-run] [--wandb] [--wandb-project NAME]"
 }

@@ -60,19 +60,6 @@ def jacobian_metrics(
     singular_values = torch.linalg.svdvals(block.float())
     positive = singular_values[singular_values > epsilon]
     sigma_max = float(singular_values.max().item()) if singular_values.numel() else 0.0
-    sigma_min = float(positive.min().item()) if positive.numel() else 0.0
-    condition = sigma_max / max(sigma_min, epsilon)
-    probabilities = singular_values.square()
-    probability_sum = probabilities.sum()
-    if probability_sum > 0:
-        probabilities = probabilities / probability_sum
-        effective_rank = float(
-            torch.exp(
-                -(probabilities * probabilities.clamp_min(epsilon).log()).sum()
-            ).item()
-        )
-    else:
-        effective_rank = 0.0
     ground_truth_l2 = float("nan")
     if target_class is not None and 0 <= target_class < block.size(0):
         ground_truth_l2 = float(
@@ -82,15 +69,8 @@ def jacobian_metrics(
         "influence_l1": float(block.abs().sum().item()),
         "influence_fro": float(torch.linalg.matrix_norm(block).item()),
         "influence_spectral": sigma_max,
-        "influence_signed": float(
-            torch.linalg.vector_norm(block.sum(dim=0)).item()
-        ),
         "ground_truth_l2": ground_truth_l2,
-        "sigma_max": sigma_max,
-        "sigma_min_nonzero": sigma_min,
-        "condition_number": condition,
         "numerical_rank": int(positive.numel()),
-        "effective_rank": effective_rank,
         "singular_values": singular_values.detach().cpu().tolist(),
     }
 
@@ -190,7 +170,7 @@ def aggregate_hop_influence(
     bootstrap_samples: int = 500,
     seed: int = 0,
 ) -> tuple[pd.DataFrame, dict[str, float]]:
-    """Aggregate pair influence into City-style shell totals and means."""
+    """Aggregate pair influence into shell totals and receptive-field size."""
     if pair_table.empty:
         return pd.DataFrame(), {"influence_radius": float("nan")}
     target_columns = [
@@ -202,23 +182,17 @@ def aggregate_hop_influence(
         pair_table.groupby(target_columns + ["distance"], as_index=False)
         .agg(
             total_l1=("influence_l1", "sum"),
-            mean_l1=("influence_l1", "mean"),
             total_fro=("influence_fro", "sum"),
             shell_size=("source", "count"),
         )
         .sort_values(target_columns + ["distance"])
     )
     zero_total = grouped[grouped["distance"] == 0][
-        target_columns + ["total_l1", "mean_l1"]
-    ].rename(
-        columns={"total_l1": "zero_total_l1", "mean_l1": "zero_mean_l1"}
-    )
+        target_columns + ["total_l1"]
+    ].rename(columns={"total_l1": "zero_total_l1"})
     grouped = grouped.merge(zero_total, on=target_columns, how="left")
     grouped["normalized_total_l1"] = (
         grouped["total_l1"] / grouped["zero_total_l1"].clip(lower=1e-30)
-    )
-    grouped["normalized_mean_l1"] = (
-        grouped["mean_l1"] / grouped["zero_mean_l1"].clip(lower=1e-30)
     )
     per_target_denominator = grouped.groupby(target_columns)["total_l1"].transform(
         "sum"
@@ -234,52 +208,47 @@ def aggregate_hop_influence(
 
     metric_columns = [
         "total_l1",
-        "mean_l1",
         "total_fro",
         "normalized_total_l1",
-        "normalized_mean_l1",
         "shell_size",
     ]
     summary = grouped.groupby("distance", as_index=False)[metric_columns].mean()
     rng = np.random.default_rng(seed)
-    for metric in ("normalized_total_l1", "normalized_mean_l1"):
-        intervals: dict[int, tuple[float, float]] = {}
-        values_by_target = {}
-        for key, row_frame in grouped.groupby(target_columns):
-            normalized_key = key if isinstance(key, tuple) else (key,)
-            values_by_target[normalized_key] = row_frame.set_index("distance")[
-                metric
-            ]
-        keys = list(values_by_target)
-        distributions: dict[int, list[float]] = {
-            int(distance): [] for distance in summary["distance"]
+    intervals: dict[int, tuple[float, float]] = {}
+    values_by_target = {}
+    for key, row_frame in grouped.groupby(target_columns):
+        normalized_key = key if isinstance(key, tuple) else (key,)
+        values_by_target[normalized_key] = row_frame.set_index("distance")[
+            "normalized_total_l1"
+        ]
+    keys = list(values_by_target)
+    distributions: dict[int, list[float]] = {
+        int(distance): [] for distance in summary["distance"]
+    }
+    if keys and bootstrap_samples > 0:
+        for _ in range(bootstrap_samples):
+            sampled = rng.choice(len(keys), size=len(keys), replace=True)
+            for distance in distributions:
+                values = [
+                    values_by_target[keys[index]].get(distance, np.nan)
+                    for index in sampled
+                ]
+                distributions[distance].append(float(np.nanmean(values)))
+        intervals = {
+            distance: (
+                float(np.nanpercentile(values, 2.5)),
+                float(np.nanpercentile(values, 97.5)),
+            )
+            for distance, values in distributions.items()
         }
-        if keys and bootstrap_samples > 0:
-            for _ in range(bootstrap_samples):
-                sampled = rng.choice(len(keys), size=len(keys), replace=True)
-                for distance in distributions:
-                    values = [
-                        values_by_target[keys[index]].get(distance, np.nan)
-                        for index in sampled
-                    ]
-                    distributions[distance].append(float(np.nanmean(values)))
-            intervals = {
-                distance: (
-                    float(np.nanpercentile(values, 2.5)),
-                    float(np.nanpercentile(values, 97.5)),
-                )
-                for distance, values in distributions.items()
-            }
-        summary[f"{metric}_ci_low"] = summary["distance"].map(
-            lambda value, bounds=intervals: bounds.get(
-                int(value), (float("nan"),)
-            )[0]
-        )
-        summary[f"{metric}_ci_high"] = summary["distance"].map(
-            lambda value, bounds=intervals: bounds.get(
-                int(value), (float("nan"), float("nan"))
-            )[1]
-        )
+    summary["normalized_total_l1_ci_low"] = summary["distance"].map(
+        lambda value, bounds=intervals: bounds.get(int(value), (float("nan"),))[0]
+    )
+    summary["normalized_total_l1_ci_high"] = summary["distance"].map(
+        lambda value, bounds=intervals: bounds.get(
+            int(value), (float("nan"), float("nan"))
+        )[1]
+    )
 
     positive = summary[
         (summary["distance"] > 0) & (summary["normalized_total_l1"] > 0)

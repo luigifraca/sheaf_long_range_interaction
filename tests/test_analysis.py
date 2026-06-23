@@ -5,8 +5,10 @@ from torch import nn
 from torch_geometric.data import Data
 from torch_geometric.utils import total_influence
 
+from slri.analysis.curvature import curvature_payload
 from slri.analysis.geometry import (
     canonical_transport_product,
+    extract_orthogonal_restriction_rotations,
     extract_sheaf_geometry,
 )
 from slri.analysis.influence import (
@@ -14,6 +16,7 @@ from slri.analysis.influence import (
     compute_target_jacobians,
 )
 from slri.analysis.pathwise import compute_pathwise_jacobian
+from slri.analysis.plotting import plot_orthogonal_restriction_rotations
 from slri.analysis.runner import analyze_run, load_analysis_config
 from slri.config import load_config
 from slri.datasets.transfer import make_transfer_graph
@@ -62,7 +65,14 @@ def test_city_l1_aggregation_matches_pyg_total_influence():
     import pandas as pd
 
     pair_table = pd.concat(tables, ignore_index=True)
+    assert {
+        "influence_signed",
+        "sigma_min_nonzero",
+        "condition_number",
+        "effective_rank",
+    }.isdisjoint(pair_table.columns)
     ours, _ = aggregate_hop_influence(pair_table, bootstrap_samples=0)
+    assert {"mean_l1", "normalized_mean_l1"}.isdisjoint(ours.columns)
     pyg, _ = total_influence(
         model,
         data,
@@ -200,7 +210,7 @@ def test_parallel_shortest_paths_report_exact_cancellation():
         target=3,
     )
     assert row["path_count"] == 2
-    assert row["path_norm_sum"] == 2.0
+    assert "path_norm_sum" not in row
     assert row["path_cancellation"] == 0.0
     assert torch.equal(matrices["full"], torch.zeros(1, 1))
     assert torch.equal(matrices["geodesic"], torch.zeros(1, 1))
@@ -245,9 +255,14 @@ def test_geometry_extracts_all_sheaf_objects():
         "restriction_dst_fro",
         "transport_fro",
         "normalized_transport_fro",
+        "laplacian_entry_fro",
+        "diffusion_alpha",
         "omega",
     } <= set(snapshot.table)
     assert set(snapshot.strengths_by_layer) == {0, 1}
+    assert set(snapshot.laplacian_by_layer) == {0, 1}
+    first_row = snapshot.table[~snapshot.table["is_self_loop"]].iloc[0]
+    assert first_row["laplacian_entry_fro"] == first_row["normalized_transport_fro"]
     metrics, product = canonical_transport_product(snapshot, [0, 1, 2])
     assert product is not None
     assert {
@@ -270,16 +285,85 @@ def test_geometry_supports_deterministic_edge_sampling():
         normalize_output=False,
     )
     first = extract_sheaf_geometry(
-        model, graph.x, graph.edge_index, max_edges_per_layer=5
+        model,
+        graph.x,
+        graph.edge_index,
+        max_edges_per_layer=5,
+        required_edges={(4, 5)},
     )
     second = extract_sheaf_geometry(
-        model, graph.x, graph.edge_index, max_edges_per_layer=5
+        model,
+        graph.x,
+        graph.edge_index,
+        max_edges_per_layer=5,
+        required_edges={(4, 5)},
     )
     assert first is not None and second is not None
-    assert len(first.table) == 10
+    assert len(first.table) >= 10
     assert first.table[["layer", "source", "target"]].equals(
         second.table[["layer", "source", "target"]]
     )
+    required = first.table[
+        first.table.apply(
+            lambda row: {int(row.source), int(row.target)} == {4, 5},
+            axis=1,
+        )
+    ]
+    assert set(required["layer"]) == {0, 1}
+
+
+def test_curvature_payload_contains_multi_alpha_weight_schemes():
+    graph = make_transfer_graph("ring", label=0, size=6)
+    model = build_model(
+        variant="general",
+        in_channels=5,
+        out_channels=5,
+        stalk_dim=2,
+        hidden_dim=3,
+        num_layers=2,
+        normalize_output=False,
+    )
+    snapshot = extract_sheaf_geometry(model, graph.x, graph.edge_index)
+    assert snapshot is not None
+    payload = curvature_payload(
+        graph.edge_index,
+        snapshot,
+        alphas=[0.0, 0.5, 1.0],
+    )
+    assert payload["alphas"] == [0.0, 0.5, 1.0]
+    assert set(payload["omega_by_layer"]) == {"0", "1"}
+    assert set(payload["laplacian_by_layer"]) == {"0", "1"}
+    first_layer = payload["laplacian_by_layer"]["0"]
+    assert all(value >= 0 for value in first_layer.values())
+
+
+def test_orthogonal_rotation_plots_for_d2_and_d3(tmp_path):
+    graph = make_transfer_graph("ring", label=0, size=6)
+    path = [3, 2, 1, 0]
+    for stalk_dim in (2, 3):
+        model = build_model(
+            variant="orthogonal",
+            in_channels=5,
+            out_channels=5,
+            stalk_dim=stalk_dim,
+            hidden_dim=3,
+            num_layers=2,
+            normalize_output=False,
+        )
+        table = extract_orthogonal_restriction_rotations(
+            model,
+            graph.x,
+            graph.edge_index,
+            paths=[path],
+        )
+        assert not table.empty
+        assert set(table["stalk_dim"]) == {stalk_dim}
+        assert {"restriction_dst", "restriction_src", "transport"} <= set(
+            table["map_kind"]
+        )
+        output = tmp_path / f"orthogonal-d{stalk_dim}.pdf"
+        plot_orthogonal_restriction_rotations(table, output)
+        assert output.exists()
 
 
 def test_analysis_preset_contains_requested_controls():
@@ -326,7 +410,9 @@ def test_smoke_analysis_is_indexed_and_exportable(tmp_path):
     names = {item["relative_path"] for item in files}
     assert "tables/influence_pairs.parquet" in names
     assert "tables/path_jacobians.parquet" in names
+    assert "tables/orthogonal_restriction_rotations.parquet" in names
     assert "figures/distance_influence.pdf" in names
+    assert "figures/orthogonal_restriction_rotations.pdf" in names
     artifact_path = Path(storage.show_analysis(analysis_id)["artifact_path"])
     matrices = torch.load(
         artifact_path / "matrices" / "synthetic_jacobians.pt",

@@ -28,7 +28,7 @@ training:
     train: 100
     val: 20
     test: 100
-seeds: [0, 1, 2]
+seeds: [43]
 tracking:
   wandb: false
   project: sheaf-long-range-barbell

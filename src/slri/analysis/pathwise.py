@@ -196,7 +196,6 @@ def compute_pathwise_jacobian(
         "num_layers": adapter.num_layers,
         "path_count": path_count,
         "enumeration_truncated": enumeration_truncated,
-        "path_norm_sum": path_norm_sum,
         "path_cancellation": cancellation,
         "geodesic_to_full_ratio": geodesic_norm / max(full_norm, 1e-30),
         "non_geodesic_fro": float(torch.linalg.matrix_norm(residual).item()),
