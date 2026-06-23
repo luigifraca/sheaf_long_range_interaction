@@ -7,6 +7,13 @@ REPOSITORY="${SLRI_REPOSITORY:-https://github.com/luigifraca/sheaf_long_range_in
 REVISION="${SLRI_REVISION:-main}"
 CODE_ROOT="/root/sheaf_long_range_interaction"
 SOURCE_ROOT="${SLRI_SOURCE_ROOT:-}"
+GITHUB_TOKEN="${SLRI_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+GIT_AUTH_ARGS=()
+if [[ -n "$GITHUB_TOKEN" ]]; then
+  GIT_AUTH_ARGS=(
+    -c "http.https://github.com/.extraheader=Authorization: Bearer $GITHUB_TOKEN"
+  )
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -21,13 +28,13 @@ if [[ -n "$SOURCE_ROOT" ]]; then
   rm -rf "$CODE_ROOT"
   cp -a "$SOURCE_ROOT" "$CODE_ROOT"
 elif [[ ! -d "$CODE_ROOT/.git" ]]; then
-  git clone --recurse-submodules "$REPOSITORY" "$CODE_ROOT"
+  git "${GIT_AUTH_ARGS[@]}" clone --recurse-submodules "$REPOSITORY" "$CODE_ROOT"
 fi
 cd "$CODE_ROOT"
 if [[ -d .git ]]; then
-  git fetch origin "$REVISION"
+  git "${GIT_AUTH_ARGS[@]}" fetch origin "$REVISION"
   git checkout --force "$REVISION"
-  git submodule update --init --recursive
+  git "${GIT_AUTH_ARGS[@]}" submodule update --init --recursive
 fi
 
 if ! command -v uv >/dev/null 2>&1; then

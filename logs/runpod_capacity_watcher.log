@@ -1,0 +1,3 @@
+attempt=1 deployment=20260623-155537 roles=6 gpu=NVIDIA A40
+creating role=barbell deployment=20260623-155537
+capacity unavailable; retrying in 120s (attempt 1)
