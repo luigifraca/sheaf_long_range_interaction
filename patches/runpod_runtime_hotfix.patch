@@ -1,0 +1,79 @@
+diff --git a/src/slri/analysis/runner.py b/src/slri/analysis/runner.py
+index 54ab699..460a8a0 100644
+--- a/src/slri/analysis/runner.py
++++ b/src/slri/analysis/runner.py
+@@ -525,21 +525,29 @@ def _correlations(path_table: pd.DataFrame) -> pd.DataFrame:
+     for predictor in candidates:
+         if predictor not in path_table:
+             continue
+-        frame = path_table[[outcome, predictor, "distance"]].replace(
+-            [np.inf, -np.inf], np.nan
+-        ).dropna()
+-        if len(frame) < 3 or frame[predictor].nunique() < 2:
++        columns = [outcome, predictor]
++        if predictor != "distance":
++            columns.append("distance")
++        frame = path_table[columns].replace([np.inf, -np.inf], np.nan).dropna()
++        values = frame[predictor]
++        if len(frame) < 3 or values.nunique() < 2:
+             continue
+-        correlation = spearmanr(frame[outcome], frame[predictor]).statistic
++        correlation = spearmanr(frame[outcome], values).statistic
+         transformed = np.log10(frame[outcome].clip(lower=1e-30))
+-        design = frame[["distance", predictor]].to_numpy()
++        design_columns = (
++            [predictor] if predictor == "distance" else ["distance", predictor]
++        )
++        design = frame[design_columns].to_numpy()
+         regression = LinearRegression().fit(design, transformed)
++        coefficient_index = 0 if predictor == "distance" else 1
+         rows.append(
+             {
+                 "outcome": outcome,
+                 "predictor": predictor,
+                 "spearman": float(correlation),
+-                "distance_controlled_coefficient": float(regression.coef_[1]),
++                "distance_controlled_coefficient": float(
++                    regression.coef_[coefficient_index]
++                ),
+                 "distance_controlled_r2": float(
+                     regression.score(design, transformed)
+                 ),
+diff --git a/src/slri/grid.py b/src/slri/grid.py
+index d20ab1c..be47921 100644
+--- a/src/slri/grid.py
++++ b/src/slri/grid.py
+@@ -20,11 +20,14 @@ def config_hash(value: Any) -> str:
+     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+ 
+ 
+-def analysis_architectures() -> list[dict[str, Any]]:
++def analysis_architectures(task: str | None = None) -> list[dict[str, Any]]:
+     """Return the representative and capacity-controlled analysis suite."""
+     architectures: list[dict[str, Any]] = []
++    city_memory_limited = task == "cities"
+     for variant in ("general", "diagonal", "identity", "frozen_orthogonal"):
+         for stalk_dim in (1, 2, 3, 5):
++            if city_memory_limited and stalk_dim == 5:
++                continue
+             architectures.append(
+                 {
+                     "variant": variant,
+@@ -34,6 +37,8 @@ def analysis_architectures() -> list[dict[str, Any]]:
+                 }
+             )
+     for stalk_dim in (2, 3, 5):
++        if city_memory_limited and stalk_dim == 5:
++            continue
+         architectures.append(
+             {
+                 "variant": "orthogonal",
+@@ -106,7 +111,7 @@ def expand_grid(config: dict[str, Any]) -> list[dict[str, Any]]:
+     grid = config["grid"]
+     architectures = grid.get("architectures")
+     if grid.get("preset") == "analysis":
+-        architectures = analysis_architectures()
++        architectures = analysis_architectures(config.get("task"))
+     if architectures is None:
+         architectures = [
+             {
