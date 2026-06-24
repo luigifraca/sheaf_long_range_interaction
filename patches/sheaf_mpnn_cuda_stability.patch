@@ -1,0 +1,47 @@
+diff --git a/src/sheaf_mpnn/utils.py b/src/sheaf_mpnn/utils.py
+index fc734c3..97c30cc 100644
+--- a/src/sheaf_mpnn/utils.py
++++ b/src/sheaf_mpnn/utils.py
+@@ -65,7 +65,23 @@ def batched_sym_matrix_pow(matrices: torch.Tensor, p: float) -> torch.Tensor:
+     Returns:
+         matrices^p, shape [batch, d, d].
+     """
+-    eigvals, eigvecs = torch.linalg.eigh(matrices)
++    matrices = 0.5 * (matrices + matrices.transpose(-1, -2))
++    if not torch.all(torch.isfinite(matrices)):
++        raise RuntimeError("Cannot eigendecompose non-finite symmetric matrices")
++    try:
++        eigvals, eigvecs = torch.linalg.eigh(matrices)
++    except RuntimeError:
++        if not matrices.is_cuda:
++            raise
++        cpu_matrices = matrices.detach().cpu()
++        try:
++            eigvals_cpu, eigvecs_cpu = torch.linalg.eigh(cpu_matrices)
++        except RuntimeError:
++            return batched_sym_matrix_pow_svd(cpu_matrices, p).to(
++                device=matrices.device, dtype=matrices.dtype
++            )
++        eigvals = eigvals_cpu.to(device=matrices.device, dtype=matrices.dtype)
++        eigvecs = eigvecs_cpu.to(device=matrices.device, dtype=matrices.dtype)
+     vals_pow = eigvals.clamp(min=1e-8).pow(p)
+     return eigvecs * vals_pow.unsqueeze(-2) @ eigvecs.transpose(-1, -2)
+ 
+@@ -166,7 +182,7 @@ def apply_low_rank_norm(
+     # Per-stalk eps: small uniform perturbation for numerical conditioning.
+     if training:
+         eps = torch.empty(stalk_dim, device=D.device, dtype=D.dtype).uniform_(
+-            -0.001, 0.001
++            1e-6, 1e-3
+         )
+     else:
+         eps = torch.zeros(stalk_dim, device=D.device, dtype=D.dtype)
+@@ -214,7 +230,7 @@ def apply_general_norm(
+     # Per-stalk eps: small uniform perturbation for numerical conditioning.
+     if training:
+         eps = torch.empty(stalk_dim, device=D.device, dtype=D.dtype).uniform_(
+-            -0.001, 0.001
++            1e-6, 1e-3
+         )
+     else:
+         eps = torch.zeros(stalk_dim, device=D.device, dtype=D.dtype)
